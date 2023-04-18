@@ -1,0 +1,7 @@
+project("RCON_CLIENT")
+add_executable(rcon_client "main.cpp" )
+if(WIN32)
+  target_link_libraries(rcon_client wsock32 ws2_32)
+  add_definitions(-D_WINSOCK_DEPRECATED_NO_WARNINGS)
+endif()
+target_include_directories(rcon_client PRIVATE "${PROJECT_SOURCE_DIR}")

@@ -1,0 +1,1 @@
+int install_hooks();
