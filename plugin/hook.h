@@ -1,1 +1,1 @@
-int install_hooks();
+int rcon_install_hooks();

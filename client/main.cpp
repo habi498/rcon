@@ -1,12 +1,24 @@
 #include <iostream>
+#ifdef WIN32
 #include <winsock2.h>
+#define ERROR_NO WSAGetLastError()
+#endif
 #include <string>
 #include <algorithm>
 using namespace std;
 
 #pragma comment(lib,"ws2_32.lib") 
 #pragma warning(disable:4996) 
-#include "tclap/CmdLine.h"
+#include "tclap/CmdLine.h" 
+#ifndef WIN32
+#include <string.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#define SOCKET_ERROR -1
+#define ERROR_NO errno
+#endif
 #define SERVER "127.0.0.1"  // or "localhost" - ip address of UDP server
 #define BUFLEN 512  // max length of answer
 #define PORT 8888  // the port on which to listen for incoming data
@@ -19,7 +31,7 @@ int main(int argc, char** argv)
     char reply[1024];
     //some variables inside goto
     short cmdlen; char answer[BUFLEN];
-    int slen;
+    unsigned int slen;
     int answer_length; short msglen;
     char input[512];
     // Wrap everything in a try block.  Do this every time, 
@@ -75,6 +87,7 @@ int main(int argc, char** argv)
     {
         std::cerr << "error: " << e.error() << " for arg " << e.argId() << std::endl;
     }
+#ifdef WIN32
     WSADATA ws;
     //printf("Initialising Winsock...");
     if (WSAStartup(MAKEWORD(2, 2), &ws) != 0)
@@ -82,14 +95,17 @@ int main(int argc, char** argv)
         printf("Failed. Error Code: %d", WSAGetLastError());
         return 1;
     }
-    //printf("Initialised.\n");
-
+#endif
     // create socket
     sockaddr_in server;
     int client_socket;
     if ((client_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == SOCKET_ERROR) // <<< UDP socket
     {
+        #ifdef WIN32
         printf("socket() failed with error code: %d", WSAGetLastError());
+        #else
+        printf("socket() failed with error code: %d", errno);
+        #endif
         return 2;
     }
 
@@ -97,7 +113,11 @@ int main(int argc, char** argv)
     memset((char*)&server, 0, sizeof(server));
     server.sin_family = AF_INET;
     server.sin_port = htons(port);
+    #ifdef WIN32
     server.sin_addr.S_un.S_addr = inet_addr(hostname.c_str());
+#else
+    server.sin_addr.s_addr = inet_addr(hostname.c_str());
+#endif
 
     // start communication
     while (true)
@@ -133,7 +153,7 @@ int main(int argc, char** argv)
             // send the message
             if (sendto(client_socket, message, 15 + passlen + 1, 0, (sockaddr*)&server, sizeof(sockaddr_in)) == SOCKET_ERROR)
             {
-                printf("sendto() failed with error code: %d", WSAGetLastError());
+                printf("sendto() failed with error code: %d", ERROR_NO);
                 return 3;
             }
         }
@@ -146,7 +166,7 @@ int main(int argc, char** argv)
            // send the message
            if (sendto(client_socket, message, 15 + passlen+cmdlen, 0, (sockaddr*)&server, sizeof(sockaddr_in)) == SOCKET_ERROR)
            {
-               printf("sendto() failed with error code: %d", WSAGetLastError());
+               printf("sendto() failed with error code: %d", ERROR_NO);
                return 3;
            }
         }
@@ -158,10 +178,11 @@ int main(int argc, char** argv)
         // try to receive some data, this is a blocking call
         slen = sizeof(sockaddr_in);
         
-        answer_length = recvfrom(client_socket, answer, BUFLEN, 0, (sockaddr*)&server, &slen);
+        answer_length = recvfrom(client_socket, answer, BUFLEN, 0, (sockaddr*)&server,
+            &slen);
         if (answer_length == SOCKET_ERROR)
         {
-            printf("recvfrom() failed with error code: %d", WSAGetLastError());
+            printf("recvfrom() failed with error code: %d", ERROR_NO);
             exit(0);
         }
         if (answer_length < 13)
@@ -226,7 +247,11 @@ int main(int argc, char** argv)
         }
         
     }
-
+#ifdef WIN32
     closesocket(client_socket);
     WSACleanup();
+#else 
+    close(client_socket);
+#endif
+    
 }

@@ -156,7 +156,7 @@ extern "C" EXPORT unsigned int VcmpPluginInit(PluginFuncs * Funcs, PluginCallbac
 		{
 			memcpy(rcon_password, rconpassword_cfg.ptr[0], len + 1);
 			rcon_init = true;
-			if (install_hooks())
+			if (rcon_install_hooks())
 			{
 				return 1;
 			}

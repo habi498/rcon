@@ -21,6 +21,11 @@
 extern char* rcon_password;
 extern bool rcon_init;
 #pragma comment( lib, "psapi.lib" )
+#ifndef WIN32
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#endif
 #ifdef WIN32
 typedef int (__stdcall *recvfrom_func)(
                    SOCKET   s,
@@ -31,11 +36,14 @@ typedef int (__stdcall *recvfrom_func)(
      int* fromlen
 );
 
-recvfrom_func recvfrom_original;
+
 #else
-ssize_t (*recvfrom_func)(int sockfd, void* buf, size_t len, int flags,
+typedef ssize_t (*recvfrom_func)(int sockfd, void* buf, size_t len, int flags,
     struct sockaddr* src_addr, socklen_t* addrlen);
 #endif
+recvfrom_func recvfrom_original;
+
+
 #ifdef WIN32
 int __stdcall recvfrom_hook(SOCKET s, char* buf, int len, int flags,
     sockaddr* from, int* fromlen) {
@@ -43,7 +51,7 @@ int __stdcall recvfrom_hook(SOCKET s, char* buf, int len, int flags,
 ssize_t recvfrom_hook(int s, void* message, size_t len,
     int flags, struct sockaddr* from,
     socklen_t* fromlen) {
-    //char* buf = (const char*)message;
+    char* buf = ( char*)message;
 #endif
     int r= recvfrom_original(s, buf, len, flags, from, fromlen);
     if (len < 11)return r;
@@ -56,9 +64,9 @@ ssize_t recvfrom_hook(int s, void* message, size_t len,
             //Login as RCON Admin
             struct sockaddr_in* addr_in = (struct sockaddr_in*)from;
             char* ip = inet_ntoa(addr_in->sin_addr);
-            
+            short passlen, cmdlen;
             if (len < 13)goto login_failed;
-            short passlen = (unsigned char)buf[11] * 256 + (unsigned char)buf[12];//the vcmp style!
+             passlen = (unsigned char)buf[11] * 256 + (unsigned char)buf[12];//the vcmp style!
            // printf("passlen is %d and len is %d\n", passlen,len);
             if (len < (13 + passlen))goto login_failed;
             char buffer1[512];
@@ -69,7 +77,7 @@ ssize_t recvfrom_hook(int s, void* message, size_t len,
             //Get command
             char buffer2[512];
             if (len < (15 + passlen))return r;
-            short cmdlen = (unsigned char)buf[13 + passlen] * 256 + (unsigned char)buf[13 + passlen + 1];
+            cmdlen = (unsigned char)buf[13 + passlen] * 256 + (unsigned char)buf[13 + passlen + 1];
             if (cmdlen > (sizeof(buffer2) - 1))
                 return r;
             if (len < (13 + passlen + 2 + cmdlen))
@@ -89,7 +97,7 @@ ssize_t recvfrom_hook(int s, void* message, size_t len,
                     reply[11] = 0; reply[12] = 2;
                     memcpy(reply + 13, "OK", 2); 
                     sendto(s, reply, 15, 0, from, *fromlen);
-                    printf("RCON admin connected to server");
+                    printf("RCON admin connected to server\n");
                 }
                 else
                 {
@@ -128,7 +136,7 @@ ssize_t recvfrom_hook(int s, void* message, size_t len,
     }
     return r;
 }
-int install_hooks()
+int rcon_install_hooks()
 {
     funchook_t* funchook = funchook_create();
     int rv;
@@ -137,10 +145,14 @@ int install_hooks()
      * The return value is used to call the original send function
      * in send_hook.
      */
+    #ifdef WIN32
     HINSTANCE libr=LoadLibrary("ws2_32.dll");
     
     //recvfrom_func = recvfrom;
     recvfrom_original= (recvfrom_func)GetProcAddress(libr, "recvfrom");
+#else 
+    recvfrom_original = (recvfrom_func)recvfrom;
+#endif
     void** target = (void**)&recvfrom_original;
     rv = funchook_prepare(funchook, target, (void*)recvfrom_hook);
     if (rv != 0) {
